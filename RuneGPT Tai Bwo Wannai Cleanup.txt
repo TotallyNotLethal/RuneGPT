@@ -1,0 +1,136 @@
+import org.dreambot.api.Client;
+import org.dreambot.api.data.GameState;
+import org.dreambot.api.methods.Calculations;
+import org.dreambot.api.methods.combat.Combat;
+import org.dreambot.api.methods.container.impl.Inventory;
+import org.dreambot.api.methods.interactive.GameObjects;
+import org.dreambot.api.methods.interactive.Players;
+import org.dreambot.api.methods.map.Area;
+import org.dreambot.api.methods.map.Tile;
+import org.dreambot.api.methods.settings.PlayerSettings;
+import org.dreambot.api.methods.skills.Skills;
+import org.dreambot.api.methods.walking.impl.Walking;
+import org.dreambot.api.methods.world.Worlds;
+import org.dreambot.api.methods.worldhopper.WorldHopper;
+import org.dreambot.api.script.AbstractScript;
+import org.dreambot.api.script.Category;
+import org.dreambot.api.script.ScriptManifest;
+import org.dreambot.api.utilities.Sleep;
+import org.dreambot.api.wrappers.interactive.GameObject;
+
+import java.awt.*;
+
+@ScriptManifest(author = "LethalLuck", name = "Tai Bwo Wannai Cleanup", version = 1.0, description = "Cleans up in Tai Bwo Wannai, avoids combat, digs up Gout Tuber, and escapes danger by world hopping", category = Category.WOODCUTTING)
+public class REPLClass extends AbstractScript {
+
+    private final Area TAI_BWO_WANNAI_AREA = new Area(new Tile(2770, 3087, 0), new Tile(2807, 3063, 0));
+    private State currentState = State.CHOPPING;
+
+    private enum State {
+        CHOPPING, REPAIRING, ESCAPING, WORLD_HOPPING, RETURNING, EXITING
+    }
+
+    @Override
+    public void onStart() {
+        log("Script started");
+    }
+
+    @Override
+    public int onLoop() {
+        if(PlayerSettings.getBitValue(907) == 100)
+            currentState = State.EXITING;
+
+        switch (currentState) {
+            case CHOPPING -> chop();
+            case REPAIRING -> repairFences();
+            case ESCAPING, EXITING -> escape();
+            case WORLD_HOPPING -> worldHop();
+            case RETURNING -> returnToArea();
+        }
+        return Calculations.random(200, 300);
+    }
+
+    private void chop() {
+        if (!TAI_BWO_WANNAI_AREA.contains(Players.getLocal())) {
+            currentState = State.RETURNING;
+            return;
+        }
+        if (Players.getLocal().isInCombat()) {
+             currentState = State.ESCAPING;
+             return;
+        }
+        if(Inventory.isFull()) {
+            currentState = State.REPAIRING;
+            return;
+        }
+
+        GameObject goutTuber = GameObjects.closest(obj -> obj != null && obj.getName().contains("Goutweed"));
+            if (goutTuber != null && goutTuber.hasAction("Dig")) {
+                if (goutTuber.interact("Dig")) {
+                    Sleep.sleepUntil(() -> !goutTuber.exists() || Inventory.isFull(), 12000);
+                    return;
+                }
+            }
+
+        GameObject brush = GameObjects.closest(obj -> obj != null && obj.getName().contains("Jungle") && obj.hasAction("Hack"));
+            if (brush != null && !Inventory.isFull() && brush.interact("Hack")) {
+                Sleep.sleepUntil(() -> !brush.exists() && brush.hasAction("Hack") || Players.getLocal().isInCombat(), 12000);
+            }
+    }
+
+    private void repairFences() {
+        if (Players.getLocal().isInCombat()) {
+            currentState = State.ESCAPING;
+            return;
+        }
+
+        while (Inventory.contains(item -> item != null && item.getName().contains("spar"))) {
+            GameObject fence = GameObjects.closest(obj -> obj != null && obj.getName().contains("fence") && !obj.getName().contains("Village"));
+            if (fence != null && fence.hasAction("Repair")) {
+                if (fence.interact("Repair")) {
+                    Sleep.sleepUntil(() -> !fence.exists() || !Inventory.contains(item -> item != null && item.getName().contains("Thatch")), 12000);
+                }
+            } else {
+                currentState = State.CHOPPING;
+                break; // Exit the loop if no fence is found
+            }
+            if(!Inventory.contains(item -> item != null && item.getName().contains("Thatch"))){
+                currentState = State.CHOPPING;
+                break; // Exit the loop if no fence is found
+            }
+        }
+    }
+
+    private void escape () {
+        Tile escapeTile = new Tile(2803, 3075);
+        if (Walking.walk(escapeTile)) {
+            Sleep.sleepUntil(() -> !Players.getLocal().isInCombat(), 3000);
+            GameObjects.closest("Ladder").interact("Climb-up");
+            if(Combat.isPoisoned())
+                Inventory.interact(item -> item.getName().contains("Antipoison"), "Drink");
+            if(!currentState.equals(State.EXITING))
+                currentState = State.WORLD_HOPPING;
+            else stop();
+        }
+    }
+
+    private void worldHop () {
+        if (WorldHopper.hopWorld(Worlds.getRandomWorld(world -> world.isMembers() && !world.isPVP() && !world.isDeadmanMode() && !world.isLeagueWorld() && !world.isSuspicious() && (world.getMinimumLevel() < Skills.getTotalLevel()) && !world.isFreshStart()))) {
+            Sleep.sleepUntil(() -> !Players.getLocal().isInCombat() && (Client.getGameState() != GameState.HOPPING), 4000);
+            currentState = State.RETURNING;
+        }
+    }
+
+
+    private void returnToArea () {
+        if (Walking.walk(TAI_BWO_WANNAI_AREA.getRandomTile())) {
+            Sleep.sleepUntil(() -> TAI_BWO_WANNAI_AREA.contains(Players.getLocal()), 6000);
+            currentState = State.CHOPPING;
+        }
+    }
+    @Override
+    public void onPaint (Graphics graphics){
+        graphics.drawString("State: " + currentState, 10, 35);
+        graphics.drawString("Favour: " + PlayerSettings.getBitValue(907), 10, 50);
+    }
+}

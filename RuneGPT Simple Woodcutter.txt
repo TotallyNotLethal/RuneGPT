@@ -1,0 +1,107 @@
+import org.dreambot.api.script.*;
+import org.dreambot.api.methods.Calculations;
+import org.dreambot.api.methods.container.impl.bank.Bank;
+import org.dreambot.api.methods.skills.Skill;
+import org.dreambot.api.methods.skills.Skills;
+import org.dreambot.api.methods.walking.impl.Walking;
+import org.dreambot.api.utilities.Logger;
+import org.dreambot.api.utilities.Sleep;
+import org.dreambot.api.wrappers.interactive.GameObject;
+import org.dreambot.api.methods.container.impl.Inventory;
+import org.dreambot.api.methods.interactive.GameObjects;
+import org.dreambot.api.methods.interactive.Players;
+import javax.swing.*;
+import java.awt.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+public class REPLClass extends AbstractScript {
+    private String selectedTree = "Tree";
+    private String selectedLog = "Logs";
+    private int startingExperience;
+    private int logsCut = 0;
+    private final AtomicBoolean started = new AtomicBoolean(false);
+
+    @Override
+    public void onStart() {
+        Logger.log("Script started!");
+        startingExperience = Skills.getExperience(Skill.WOODCUTTING);
+        SwingUtilities.invokeLater(() -> {
+            JFrame frame = new JFrame();
+            String[] treeOptions = {"Tree", "Oak tree", "Willow tree", "Maple tree", "Yew tree", "Magic tree"};
+            selectedTree = (String) JOptionPane.showInputDialog(frame, "Choose the tree type:",
+                    "Tree Selection", JOptionPane.QUESTION_MESSAGE, null, treeOptions, treeOptions[0]);
+            if (selectedTree != null) {
+                switch (selectedTree) {
+                    case "Oak":
+                        selectedLog = "Oak logs";
+                        break;
+                    case "Willow":
+                        selectedLog = "Willow logs";
+                        break;
+                    case "Maple":
+                        selectedLog = "Maple logs";
+                        break;
+                    case "Yew":
+                        selectedLog = "Yew logs";
+                        break;
+                    case "Magic":
+                        selectedLog = "Magic logs";
+                        break;
+                    default:
+                        selectedLog = "Logs";
+                        break;
+                }
+                Logger.log("Selected tree: " + selectedTree + ", Log: " + selectedLog);
+                started.set(true);
+            } else {
+                stop();
+            }
+        });
+    }
+
+    @Override
+    public int onLoop() {
+        if (!started.get()) {
+            return 1000; // Wait until GUI is completed
+        }
+        if (!Players.getLocal().isAnimating() && !Inventory.isFull() && !Players.getLocal().isMoving()) {
+            chopTree();
+        } else if (Inventory.isFull()) {
+            depositLogs();
+        }
+        return Calculations.random(200, 600);
+    }
+
+    private void chopTree() {
+        GameObject tree = GameObjects.closest(gameObject -> gameObject != null && gameObject.getName().equalsIgnoreCase(selectedTree));
+        if (tree != null && tree.distance() <= 10 && tree.interact("Chop down")) {
+            Sleep.sleepUntil(() -> !Players.getLocal().isAnimating() || Inventory.isFull(), 12000);
+        }
+    }
+
+    private void depositLogs() {
+        if (Bank.open()) {
+            Sleep.sleepUntil(Bank::isOpen, 5000);
+            Bank.depositAllItems();
+            Sleep.sleepUntil(() -> !Inventory.contains(selectedLog), 5000);
+            Bank.close();
+        } else {
+            Walking.walk(Bank.getClosestBankLocation().getCenter());
+            Sleep.sleepUntil(() -> Bank.isOpen() || Inventory.isEmpty(), 12000);
+        }
+    }
+
+    @Override
+    public void onPaint(Graphics graphics) {
+        int currentExperience = Skills.getExperience(Skill.WOODCUTTING);
+        logsCut = (currentExperience - startingExperience) / 25; // Assuming each log gives 25 experience
+        graphics.drawString("Experience Gained: " + (currentExperience - startingExperience), 10, 35);
+        graphics.drawString("Current Level: " + Skills.getRealLevel(Skill.WOODCUTTING), 10, 50);
+        graphics.drawString("Logs Cut: " + logsCut, 10, 65);
+    }
+
+    @Override
+    public void onExit() {
+        Logger.log("Script stopped.");
+    }
+}

@@ -1,0 +1,188 @@
+
+import org.dreambot.api.script.*;
+import org.dreambot.api.methods.Calculations;
+import org.dreambot.api.methods.container.impl.Inventory;
+import org.dreambot.api.methods.container.impl.bank.Bank;
+import org.dreambot.api.methods.grandexchange.GrandExchange;
+import org.dreambot.api.methods.grandexchange.LivePrices;
+import org.dreambot.api.methods.magic.Magic;
+import org.dreambot.api.methods.magic.Lunar;
+import org.dreambot.api.methods.magic.Spellbook;
+import org.dreambot.api.methods.skills.Skill;
+import org.dreambot.api.methods.skills.Skills;
+import org.dreambot.api.utilities.Logger;
+import org.dreambot.api.utilities.Sleep;
+
+import java.awt.*;
+
+public class REPLClass extends AbstractScript {
+
+    private static final int ASTRAL_RUNE_ID = 9075;
+    private static final int GIANT_SEAWEED_ID = 21504;
+    private static final int BUCKET_OF_SAND_ID = 1783;
+    private static final int REQUIRED_ASTRAL_RUNES = 2;
+    private static final int REQUIRED_GIANT_SEAWEED = 3;
+    private static final int REQUIRED_BUCKET_OF_SAND = 18;
+    private static final int BUY_REQUIRED_ASTRAL_RUNES = 2000;
+    private static final int BUY_REQUIRED_GIANT_SEAWEED = 3000;
+    private static final int BUY_REQUIRED_BUCKET_OF_SAND = 18000;
+    private long startTime;
+    private long startCraftingXP;
+    private long startMagicXP;
+
+    private enum State {
+        CHECK_BANK, WITHDRAW_ITEMS, BUY_ITEMS, CAST_SPELL, DEPOSIT_ITEMS, WAIT
+    }
+
+    private State getState() {
+        if (!Bank.isOpen() && !hasRequiredItems()) {
+            return State.CHECK_BANK;
+        } else if (Bank.isOpen() && !hasRequiredItems()) {
+            return State.WITHDRAW_ITEMS;
+        } else if (isOnLunarSpellbook() && Magic.canCast(Lunar.SUPERGLASS_MAKE) && hasRequiredItems()) {
+            return State.CAST_SPELL;
+        } else if (Inventory.contains(item -> item != null && item.getID() != ASTRAL_RUNE_ID && item.getID() != GIANT_SEAWEED_ID && item.getID() != BUCKET_OF_SAND_ID)) {
+            return State.DEPOSIT_ITEMS;
+        } else {
+            return State.WAIT;
+        }
+    }
+
+    @Override
+    public void onStart() {
+        Logger.log("Script started!");
+        startTime = System.currentTimeMillis();
+        startCraftingXP = Skills.getExperience(Skill.CRAFTING);
+        startMagicXP = Skills.getExperience(Skill.MAGIC);
+    }
+
+    @Override
+    public int onLoop() {
+        switch (getState()) {
+            case CHECK_BANK:
+                checkBank();
+                break;
+            case WITHDRAW_ITEMS:
+                withdrawItems();
+                break;
+            case BUY_ITEMS:
+                buyItems();
+                break;
+            case CAST_SPELL:
+                if (Bank.isOpen()) {
+                    Bank.close();
+                    Sleep.sleepUntil(() -> !Bank.isOpen(), 2000);
+                }
+                if (!Magic.castSpell(Lunar.SUPERGLASS_MAKE)) {
+                    Logger.log("Failed to cast SuperGlass Make. Attempting to withdraw items again.");
+                    return State.WITHDRAW_ITEMS.ordinal();
+                }
+                Sleep.sleepUntil(() -> !hasRequiredItems(), Calculations.random(1000, 1500));
+                Sleep.sleep(1500);
+                break;
+            case DEPOSIT_ITEMS:
+                depositUnwantedItems();
+                break;
+            case WAIT:
+                return Calculations.random(200, 600); // Idle state
+        }
+        return Calculations.random(200, 600);
+    }
+
+    private boolean hasRequiredItems() {
+        return (Inventory.count(ASTRAL_RUNE_ID) >= REQUIRED_ASTRAL_RUNES) &&
+               (Inventory.count(GIANT_SEAWEED_ID) >= REQUIRED_GIANT_SEAWEED) &&
+               (Inventory.count(BUCKET_OF_SAND_ID) >= REQUIRED_BUCKET_OF_SAND);
+    }
+
+    private void checkBank() {
+        if (!Bank.isOpen()) {
+            Bank.open();
+            Sleep.sleepUntil(() -> Bank.isOpen(), 2000);
+        } else {
+            if (!Bank.contains(ASTRAL_RUNE_ID) || !Bank.contains(GIANT_SEAWEED_ID) || !Bank.contains(BUCKET_OF_SAND_ID)) {
+                Logger.log("Required items not found in bank, attempting to buy from GE.");
+                Bank.close();
+            } else {
+                Logger.log("Required items found in bank.");
+            }
+        }
+    }
+
+    private void withdrawItems() {
+        Bank.depositAllExcept(ASTRAL_RUNE_ID, GIANT_SEAWEED_ID, BUCKET_OF_SAND_ID);
+        int astralRuneCount = (int) Inventory.count(ASTRAL_RUNE_ID);
+        int giantSeaweedCount = (int) Inventory.count(GIANT_SEAWEED_ID);
+        int bucketOfSandCount = (int) Inventory.count(BUCKET_OF_SAND_ID);
+
+        if (astralRuneCount < REQUIRED_ASTRAL_RUNES) {
+            Bank.withdraw(ASTRAL_RUNE_ID, REQUIRED_ASTRAL_RUNES - astralRuneCount);
+        }
+        if (giantSeaweedCount < REQUIRED_GIANT_SEAWEED) {
+            Bank.withdraw(GIANT_SEAWEED_ID, REQUIRED_GIANT_SEAWEED - giantSeaweedCount);
+        }
+        if (bucketOfSandCount < REQUIRED_BUCKET_OF_SAND) {
+            Bank.withdraw(BUCKET_OF_SAND_ID, REQUIRED_BUCKET_OF_SAND - bucketOfSandCount);
+        }
+        Sleep.sleep(1000); // Wait for items to be withdrawn.
+        if (Bank.isOpen()) {
+            Bank.close();
+            Sleep.sleepUntil(() -> !Bank.isOpen(), 2000);
+        }
+    }
+
+    private void buyItems() {
+        if (!GrandExchange.isOpen()) {
+            GrandExchange.open();
+        } else {
+            int astralRuneCount = (int) Inventory.count(ASTRAL_RUNE_ID);
+            int giantSeaweedCount = (int) Inventory.count(GIANT_SEAWEED_ID);
+            int bucketOfSandCount = (int) Inventory.count(BUCKET_OF_SAND_ID);
+
+            if (astralRuneCount < BUY_REQUIRED_ASTRAL_RUNES) {
+                GrandExchange.buyItem(ASTRAL_RUNE_ID, BUY_REQUIRED_ASTRAL_RUNES - astralRuneCount, LivePrices.get(ASTRAL_RUNE_ID) + 10);
+            }
+            if (giantSeaweedCount < BUY_REQUIRED_GIANT_SEAWEED) {
+                GrandExchange.buyItem(GIANT_SEAWEED_ID, BUY_REQUIRED_GIANT_SEAWEED - giantSeaweedCount, LivePrices.get(GIANT_SEAWEED_ID) + 10);
+            }
+            if (bucketOfSandCount < BUY_REQUIRED_BUCKET_OF_SAND) {
+                GrandExchange.buyItem(BUCKET_OF_SAND_ID, BUY_REQUIRED_BUCKET_OF_SAND - bucketOfSandCount, LivePrices.get(BUCKET_OF_SAND_ID) + 10);
+            }
+            Sleep.sleep(5000); // Wait for items to buy.
+            GrandExchange.collect();
+        }
+    }
+
+    private void depositUnwantedItems() {
+        Inventory.dropAll(item -> item.getID() != ASTRAL_RUNE_ID && item.getID() != GIANT_SEAWEED_ID && item.getID() != BUCKET_OF_SAND_ID);
+        Sleep.sleepUntil(() -> Inventory.onlyContains(ASTRAL_RUNE_ID, GIANT_SEAWEED_ID, BUCKET_OF_SAND_ID), 1500);
+    }
+
+    private boolean isOnLunarSpellbook() {
+        return Magic.isSpellSelected() || Magic.getSpellbook() == Spellbook.LUNAR;
+    }
+
+    @Override
+    public void onPaint(Graphics graphics) {
+        long currentTime = System.currentTimeMillis() - startTime;
+        long craftingXPGained = Skills.getExperience(Skill.CRAFTING) - startCraftingXP;
+        long magicXPGained = Skills.getExperience(Skill.MAGIC) - startMagicXP;
+        long craftingXpPerHour = (craftingXPGained * 3600000) / currentTime;
+        long magicXpPerHour = (magicXPGained * 3600000) / currentTime;
+        long hours = (currentTime / 3600000);
+        long minutes = (currentTime / 60000) % 60;
+        long seconds = (currentTime / 1000) % 60;
+        graphics.drawString("RuneGPT : SuperGlass Maker", 10, 35);
+        graphics.drawString("State: " + getState(), 10, 50);
+        graphics.drawString("Crafting XP Gained: " + craftingXPGained, 10, 65);
+        graphics.drawString("Crafting XP/Hour: " + craftingXpPerHour, 10, 80);
+        graphics.drawString("Magic XP Gained: " + magicXPGained, 10, 95);
+        graphics.drawString("Magic XP/Hour: " + magicXpPerHour, 10, 110);
+        graphics.drawString(String.format("Runtime: %02d:%02d:%02d", hours, minutes, seconds), 10, 125);
+    }
+
+    @Override
+    public void onExit() {
+        Logger.log("Script stopped!");
+    }
+}

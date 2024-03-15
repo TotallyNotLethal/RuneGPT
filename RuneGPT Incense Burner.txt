@@ -1,0 +1,184 @@
+import org.dreambot.api.methods.map.Tile;
+import org.dreambot.api.methods.Calculations;
+import org.dreambot.api.methods.container.impl.Inventory;
+import org.dreambot.api.methods.container.impl.bank.Bank;
+import org.dreambot.api.methods.container.impl.bank.BankMode;
+import org.dreambot.api.methods.dialogues.Dialogues;
+import org.dreambot.api.methods.input.Keyboard;
+import org.dreambot.api.wrappers.interactive.GameObject;
+import org.dreambot.api.methods.interactive.GameObjects;
+import org.dreambot.api.methods.interactive.NPCs;
+import org.dreambot.api.methods.interactive.Players;
+import org.dreambot.api.methods.map.Area;
+import org.dreambot.api.methods.walking.impl.Walking;
+import org.dreambot.api.script.AbstractScript;
+import org.dreambot.api.script.Category;
+import org.dreambot.api.script.ScriptManifest;
+import org.dreambot.api.utilities.Sleep;
+
+import javax.swing.*;
+import java.awt.*;
+import java.util.List;
+
+@ScriptManifest(category = Category.MISC, name = "Incense Burner", author = "LethalLuck", version = 1.0)
+public class REPLClass extends AbstractScript {
+
+    private static final int MARENTILL_ID = 251;
+    private static final int MARENTILL_NOTED_ID = 252;
+    private static final int TINDERBOX_ID = 590;
+    private static final int COINS_ID = 995;
+    private static final int TELEPORT_TO_HOUSE_ID = 8013;
+    private static final String PHIALS = "Phials";
+    private static final Area RIMMINGTON = new Area(2951, 3215, 2953, 3213, 0);
+    private static final Area PLAYER_HOUSE_ENTRANCE = new Area(2953, 3224, 2957, 3227, 0);
+    private String username;
+
+    private JFrame frame;
+    private JTextField usernameField;
+
+    private enum State {
+        UNNOTE_MARRENTILL, LIGHT_INCENSE, BANK, WALK_TO_PHIALS, WALK_TO_HOUSE, ENTER_FRIENDS_HOUSE
+    }
+
+    private State getState() {
+        if (!Inventory.contains(MARENTILL_NOTED_ID) || !Inventory.contains(TINDERBOX_ID) || !Inventory.contains(COINS_ID) || Inventory.count(COINS_ID) < 2000) {
+            return State.BANK;
+        } else if (Inventory.contains(MARENTILL_ID) && PLAYER_HOUSE_ENTRANCE.contains(Players.getLocal())) {
+            return State.ENTER_FRIENDS_HOUSE;
+        } else if (Inventory.contains(MARENTILL_NOTED_ID) && !Inventory.contains(MARENTILL_ID) && RIMMINGTON.contains(Players.getLocal())) {
+            return State.UNNOTE_MARRENTILL;
+        } else if (Inventory.contains(MARENTILL_NOTED_ID) && !Inventory.contains(MARENTILL_ID) && !RIMMINGTON.contains(Players.getLocal()) && !Inventory.contains(TELEPORT_TO_HOUSE_ID)) {
+            return State.WALK_TO_PHIALS;
+        } else if (!PLAYER_HOUSE_ENTRANCE.contains(Players.getLocal()) && Inventory.contains(TELEPORT_TO_HOUSE_ID)) {
+            return State.WALK_TO_HOUSE;
+        } else {
+            return State.LIGHT_INCENSE;
+        }
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        SwingUtilities.invokeLater(() -> {
+            frame = new JFrame("Enter Username");
+            usernameField = new JTextField(20);
+            JButton submitButton = new JButton("Submit");
+
+            submitButton.addActionListener(e -> {
+                username = usernameField.getText();
+                if (!username.isEmpty()) {
+                    log("Script started for username: " + username);
+                    frame.dispose();
+                } else {
+                    JOptionPane.showMessageDialog(frame, "Please enter a username.", "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            });
+
+            frame.setLayout(new FlowLayout());
+            frame.add(new JLabel("Enter house owner name:"));
+            frame.add(usernameField);
+            frame.add(submitButton);
+            frame.pack();
+            frame.setVisible(true);
+            frame.setLocationRelativeTo(null);
+            frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        });
+    }
+
+    @Override
+    public int onLoop() {
+        if (username == null || username.isEmpty()) {
+            return 1000;
+        }
+
+        switch (getState()) {
+            case BANK:
+                if (!Bank.isOpen()) {
+                    Bank.open();
+                    Sleep.sleepUntil(Bank::isOpen, 5000);
+                } else {
+                    Bank.depositAllItems();
+                    if (!Inventory.contains(TINDERBOX_ID)) {
+                        Bank.withdraw(TINDERBOX_ID, 1);
+                    }
+                    if (!Inventory.contains(COINS_ID) || Inventory.count(COINS_ID) < 100000) {
+                        Bank.withdraw(COINS_ID, 100000);
+                    }
+                    if (!Inventory.contains(TELEPORT_TO_HOUSE_ID)) {
+                        Bank.withdraw(TELEPORT_TO_HOUSE_ID, 1);
+                    }
+                    Bank.setWithdrawMode(BankMode.NOTE);
+                    if (!Inventory.contains(MARENTILL_NOTED_ID)) {
+                        Bank.withdrawAll(MARENTILL_ID);
+                    }
+                    Bank.close();
+                }
+                break;
+            case UNNOTE_MARRENTILL:
+                if(NPCs.closest(PHIALS) != null && Inventory.contains(MARENTILL_NOTED_ID)) {
+                    Inventory.interact(MARENTILL_NOTED_ID, "Use");
+                    NPCs.closest(PHIALS).interact("Use");
+                    Sleep.sleepUntil(Dialogues::inDialogue, 5000);
+                    if (Dialogues.inDialogue()) {
+                        Dialogues.typeOption(3);
+                        Sleep.sleepUntil(() -> !Inventory.contains(MARENTILL_ID), 2000);
+                    }
+                    Walking.walk(PLAYER_HOUSE_ENTRANCE.getTile());
+                }
+                break;
+            case WALK_TO_PHIALS:
+                if(NPCs.closest(PHIALS) == null) {
+                	GameObjects.closest("Portal").interact("Enter");
+                	Sleep.sleepUntil(() -> !Players.getLocal().isMoving(), 8000);
+                }
+                Walking.walk(RIMMINGTON.getRandomTile());
+                break;
+            case WALK_TO_HOUSE:
+                if (Inventory.contains(TELEPORT_TO_HOUSE_ID)) {
+                    Inventory.interact(TELEPORT_TO_HOUSE_ID, "Outside");
+                    Sleep.sleepUntil(() -> PLAYER_HOUSE_ENTRANCE.contains(Players.getLocal()), 5000);
+                } else {
+                    Walking.walk(PLAYER_HOUSE_ENTRANCE.getRandomTile());
+                    Sleep.sleep(250);
+                    Sleep.sleepUntil(() -> !Players.getLocal().isMoving(), 3000);
+                }
+                break;
+            case ENTER_FRIENDS_HOUSE:
+                GameObjects.closest("Portal").interact("Friend's house");
+                Sleep.sleepUntil(Dialogues::inDialogue, 5000);
+                if (Dialogues.inDialogue()) {
+                    Keyboard.type(username, true);
+                }
+                break;
+            case LIGHT_INCENSE:
+                List<GameObject> burners = GameObjects.all(gameObject -> gameObject != null && (gameObject.getName().matches("Incense burner")));
+                for (GameObject burner : burners) {
+                    if (Inventory.contains(MARENTILL_ID)) {
+                        burner.interact("Light");
+                        Sleep.sleepUntil(() -> !Players.getLocal().isAnimating(), 3000);
+                    }
+                }
+                break;
+        }
+        return Calculations.random(200, 600);
+    }
+
+    @Override
+    public void onPaint(Graphics g) {
+        super.onPaint(g);
+        g.drawString("State: " + getState(), 10, 35);
+        g.drawString("Home: " + username, 10, 50);
+        g.drawString("Marrentill (noted): " + Inventory.count(MARENTILL_NOTED_ID), 10, 65);
+        g.drawString("Coins: " + Inventory.count(COINS_ID), 10, 80);
+        g.drawString("Tinderbox: " + (Inventory.contains(TINDERBOX_ID) ? "Yes" : "No"), 10, 95);
+        g.drawString("Teleport to House: " + (Inventory.contains(TELEPORT_TO_HOUSE_ID) ? "Yes" : "No"), 10, 110);
+    }
+
+    @Override
+    public void onExit() {
+        log("Script stopped.");
+        if (frame != null) {
+            frame.dispose();
+        }
+    }
+}

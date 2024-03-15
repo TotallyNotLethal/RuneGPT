@@ -1,0 +1,162 @@
+import org.dreambot.api.methods.Calculations;
+import org.dreambot.api.methods.interactive.Players;
+import org.dreambot.api.methods.map.Area;
+import org.dreambot.api.methods.walking.impl.Walking;
+import org.dreambot.api.script.Category;
+import org.dreambot.api.script.ScriptManifest;
+import org.dreambot.api.utilities.Logger;
+import org.dreambot.api.script.AbstractScript;
+
+import javax.swing.*;
+import java.awt.*;
+
+@ScriptManifest(name = "Simple Walker", description = "Walks to selected destinations continuously until arrival", author ="lethalluck", version = 1.0, category = Category.MISC, image = "")
+public class REPLClass extends AbstractScript {
+
+    private JFrame frame;
+    private JTabbedPane tabbedPane;
+    private Area destination;
+    private long lastWalkTime = 0;
+
+    private static final String[] CITY_LOCATIONS = {"Varrock", "Falador", "Lumbridge", "Camelot", "Ardougne", "Al Kharid", "Draynor Village", "Edgeville", "Yanille", "Canifis"};
+    private static final String[] OBSTACLE_COURSES = {"Gnome Stronghold", "Barbarian Outpost", "Wilderness", "Rooftop Courses", "Seers' Village", "Ardougne", "Canifis", "Falador"};
+    private static final String[] BANK_LOCATIONS = {"Grand Exchange", "Varrock West", "Falador East", "Ardougne North", "Lumbridge Top", "Edgeville Bank", "Al Kharid Bank"};
+    private static final String[] MINIGAME_LOCATIONS = {"Pest Control", "Barrows", "Fight Caves", "Warriors' Guild", "Castle Wars", "Fishing Trawler"};
+
+    @Override
+    public void onStart() {
+        SwingUtilities.invokeLater(() -> {
+            frame = new JFrame("Simple Walker");
+            frame.setSize(400, 200);
+            frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+            frame.setLayout(new BorderLayout());
+
+            tabbedPane = new JTabbedPane();
+
+            JPanel cityPanel = createLocationPanel(CITY_LOCATIONS);
+            JPanel obstaclePanel = createLocationPanel(OBSTACLE_COURSES);
+            JPanel bankPanel = createLocationPanel(BANK_LOCATIONS);
+            JPanel minigamePanel = createLocationPanel(MINIGAME_LOCATIONS);
+
+            tabbedPane.addTab("Cities", cityPanel);
+            tabbedPane.addTab("Obstacle Courses", obstaclePanel);
+            tabbedPane.addTab("Banks", bankPanel);
+            tabbedPane.addTab("Minigames", minigamePanel);
+
+            frame.add(tabbedPane, BorderLayout.CENTER);
+
+            frame.setVisible(true);
+        });
+        Logger.log("Script started!");
+    }
+
+    private JPanel createLocationPanel(String[] locations) {
+        JPanel panel = new JPanel(new FlowLayout());
+        JComboBox<String> locationComboBox = new JComboBox<>(locations);
+        JButton walkButton = new JButton("Walk");
+
+        walkButton.addActionListener(e -> {
+            destination = getAreaForLocation((String) locationComboBox.getSelectedItem());
+            lastWalkTime = 0; // Reset the timer when a new destination is selected
+        });
+
+        panel.add(locationComboBox);
+        panel.add(walkButton);
+
+        return panel;
+    }
+
+    private Area getAreaForLocation(String locationName) {
+        // City locations, Obstacle Courses, Banks, and Minigames locations
+        switch (locationName) {
+            // Cities
+            case "Varrock":
+                return new Area(3211, 3423, 3257, 3391);
+            case "Falador":
+                return new Area(2964, 3380, 3008, 3338);
+            case "Lumbridge":
+                return new Area(3220, 3218, 3255, 3173);
+            case "Camelot":
+                return new Area(2757, 3475, 2815, 3425);
+            case "Ardougne":
+                return new Area(2661, 3300, 2629, 3325);
+            case "Al Kharid":
+                return new Area(3293, 3183, 3318, 3160);
+            case "Draynor Village":
+                return new Area(3086, 3256, 3105, 3235);
+            case "Edgeville":
+                return new Area(3090, 3500, 3080, 3485);
+            case "Yanille":
+                return new Area(2604, 3092, 2628, 3076);
+            case "Canifis":
+                return new Area(3494, 3483, 3516, 3463);
+            // Obstacle Courses
+            case "Gnome Stronghold":
+                return new Area(2474, 3436, 2445, 3411);
+            case "Barbarian Outpost":
+                return new Area(2543, 3551, 2553, 3563);
+            case "Wilderness":
+                return new Area(3004, 3935, 3050, 3960);
+            case "Rooftop Courses":
+                return new Area(3100, 3275, 3150, 3290);
+            case "Seers' Village":
+                return new Area(2725, 3485, 2735, 3495);
+            case "Ardougne Rooftop":
+                return new Area(2663, 3298, 2673, 3308);
+            case "Canifis Rooftop":
+                return new Area(3505, 3488, 3515, 3498);
+            case "Falador Rooftop":
+                return new Area(3035, 3343, 3045, 3353);
+            // Banks
+            case "Grand Exchange":
+                return new Area(3161, 3487, 3171, 3493);
+            case "Varrock West":
+                return new Area(3182, 3433, 3192, 3443);
+            case "Falador East":
+                return new Area(3012, 3355, 3022, 3365);
+            case "Ardougne North":
+                return new Area(2610, 3332, 2620, 3342);
+            case "Lumbridge Top":
+                return new Area(3209, 3220, 3219, 3230);
+            case "Edgeville Bank":
+                return new Area(3093, 3491, 3098, 3486);
+            case "Al Kharid Bank":
+                return new Area(3269, 3161, 3274, 3171);
+            // Minigames
+            case "Pest Control":
+                return new Area(2657, 2644, 2662, 2639);
+            case "Barrows":
+                return new Area(3565, 3285, 3575, 3295);
+            case "Fight Caves":
+                return new Area(2437, 5167, 2447, 5177);
+            case "Warriors' Guild":
+                return new Area(2845, 3540, 2855, 3550);
+            case "Castle Wars":
+                return new Area(2437, 3087, 2447, 3097);
+            case "Fishing Trawler":
+                return new Area(2676, 3169, 2686, 3179);
+            default:
+                return null;
+        }
+    }
+
+    @Override
+    public int onLoop() {
+        if (destination != null && !destination.contains(Players.getLocal()) && System.currentTimeMillis() - lastWalkTime > Calculations.random(4000, 8000)) {
+            Walking.walk(destination.getRandomTile());
+            lastWalkTime = System.currentTimeMillis(); // Update the last walk time
+        }
+        return Calculations.random(200, 600);
+    }
+
+    @Override
+    public void onPaint(Graphics graphics) {
+    }
+
+    @Override
+    public void onExit() {
+        if (frame != null) {
+            frame.dispose();
+        }
+    }
+}

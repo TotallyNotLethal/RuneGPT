@@ -1,0 +1,132 @@
+import org.dreambot.api.script.AbstractScript;
+import org.dreambot.api.methods.Calculations;
+import org.dreambot.api.methods.container.impl.bank.Bank;
+import org.dreambot.api.methods.container.impl.Inventory;
+import org.dreambot.api.methods.interactive.Players;
+import org.dreambot.api.methods.widget.helpers.ItemProcessing;
+import org.dreambot.api.utilities.Logger;
+import org.dreambot.api.utilities.Sleep;
+import org.dreambot.api.wrappers.items.Item;
+import org.dreambot.api.methods.skills.Skill;
+import org.dreambot.api.methods.skills.Skills;
+
+import javax.swing.*;
+import java.awt.*;
+
+public class REPLClass extends AbstractScript {
+
+    private String logName = "Logs";
+    private String itemToProcess = "Longbow (u)";
+    private final String KNIFE_NAME = "Knife";
+    private boolean started = false;
+    private long startTime;
+    private int startExp;
+    private int itemsCrafted = 0;
+    private int lastExp = 0;
+
+    @Override
+    public void onStart() {
+        SwingUtilities.invokeLater(() -> {
+            JFrame frame = new JFrame();
+            String[] logOptions = {"Logs", "Oak logs", "Willow logs", "Maple logs", "Yew logs", "Magic logs"};
+            logName = (String) JOptionPane.showInputDialog(frame,
+                    "Select the type of logs to fletch",
+                    "Log Selection",
+                    JOptionPane.QUESTION_MESSAGE,
+                    null,
+                    logOptions,
+                    logOptions[0]);
+            String[] itemOptions = {"Longbow (u)", "Shortbow (u)", "Arrow shaft", "Stock", "Shield"};
+            itemToProcess = (String) JOptionPane.showInputDialog(frame,
+                    "Select the item to process",
+                    "Item Selection",
+                    JOptionPane.QUESTION_MESSAGE,
+                    null,
+                    itemOptions,
+                    itemOptions[0]);
+            if (logName != null && itemToProcess != null) {
+                started = true;
+                startTime = System.currentTimeMillis();
+                startExp = Skills.getExperience(Skill.FLETCHING);
+                Logger.log("Script started with " + logName + " and processing into " + itemToProcess + "!");
+            } else {
+                Logger.log("No log type or item selected, script stopping.");
+                this.stop();
+            }
+        });
+    }
+
+    @Override
+    public int onLoop() {
+        if (!started) {
+            return 1000; // Wait until the user has selected a log type and item to process
+        }
+
+        if (!Inventory.contains(logName) || !Inventory.contains(KNIFE_NAME)) {
+            if (!Bank.isOpen()) {
+                Bank.open();
+                Sleep.sleepUntil(Bank::isOpen, Calculations.random(5000, 8000));
+            }
+            Bank.depositAllExcept(KNIFE_NAME);
+            Sleep.sleepUntil(() -> Inventory.onlyContains(KNIFE_NAME) || Inventory.isEmpty(), Calculations.random(2000, 5000));
+            if (!Inventory.contains(KNIFE_NAME) && Bank.contains(KNIFE_NAME)) {
+                Bank.withdraw(KNIFE_NAME, 1);
+                Sleep.sleepUntil(() -> Inventory.contains(KNIFE_NAME), Calculations.random(2000, 5000));
+            }
+            if (Bank.contains(logName)) {
+                Bank.withdrawAll(logName);
+                Sleep.sleepUntil(() -> Inventory.contains(logName), Calculations.random(2000, 5000));
+            }
+            Bank.close();
+            Sleep.sleepUntil(() -> !Bank.isOpen(), Calculations.random(2000, 5000));
+            return Calculations.random(200, 600);
+        }
+
+        if (!Players.getLocal().isAnimating() && Inventory.contains(logName) && Inventory.contains(KNIFE_NAME)) {
+            Item knife = Inventory.get(KNIFE_NAME);
+            Item log = Inventory.get(logName);
+
+            if (knife != null && log != null) {
+                knife.useOn(log);
+                Sleep.sleepUntil(() -> ItemProcessing.isOpen(), Calculations.random(1000, 2000));
+                if (ItemProcessing.isOpen()) {
+                    String processedLogName = logName.replaceAll(" logs", "");
+                    if(!logName.equals("Logs"))
+                    	ItemProcessing.makeAll((itemToProcess.equals("Arrow shaft")) ? itemToProcess : processedLogName + " " + itemToProcess.toLowerCase());
+                    else
+                    	ItemProcessing.makeAll((itemToProcess.equals("Stock")) ? "Wooden stock" : itemToProcess);
+                    Sleep.sleepUntil(() -> !Players.getLocal().isAnimating() && !Inventory.contains(logName), 5000);
+                }
+            }
+        }
+
+        return Calculations.random(200, 600);
+    }
+
+    @Override
+    public void onPaint(Graphics graphics) {
+        long runTime = System.currentTimeMillis() - startTime;
+        int currentExp = Skills.getExperience(Skill.FLETCHING);
+        int expGained = currentExp - startExp;
+        double expPerHour = (double) expGained / (runTime / 3600000.0);
+
+        graphics.drawString("Fletching " + logName + " into " + itemToProcess, 10, 35);
+        graphics.drawString("Runtime: " + formatTime(runTime), 10, 50);
+        graphics.drawString("Exp Gained: " + expGained, 10, 65);
+        graphics.drawString(String.format("Exp/Hour: %.2f", expPerHour), 10, 80);
+        
+    }
+
+    private String formatTime(long time) {
+        long seconds = time / 1000 % 60;
+        long minutes = time / (1000 * 60) % 60;
+        long hours = time / (1000 * 60 * 60) % 24;
+
+        return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+    }
+
+    @Override
+    public void onExit() {
+        Logger.log("Script exited.");
+    }
+}
