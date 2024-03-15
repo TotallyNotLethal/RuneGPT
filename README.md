@@ -4,4 +4,4 @@ Incense Burner
 Simple Woodcutter
 Simple Walker
 SuperGlass Make
-TaiBwoWannai Cleanup
+Tai Bwo Wannai Cleanup
