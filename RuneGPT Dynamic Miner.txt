@@ -1,0 +1,93 @@
+import org.dreambot.api.methods.Calculations;
+import org.dreambot.api.methods.container.impl.Inventory;
+import org.dreambot.api.methods.interactive.GameObjects;
+import org.dreambot.api.methods.interactive.Players;
+import org.dreambot.api.methods.map.Area;
+import org.dreambot.api.methods.skills.Skill;
+import org.dreambot.api.methods.skills.Skills;
+import org.dreambot.api.methods.walking.impl.Walking;
+import org.dreambot.api.script.AbstractScript;
+import org.dreambot.api.script.Category;
+import org.dreambot.api.script.ScriptManifest;
+import org.dreambot.api.utilities.Logger;
+import org.dreambot.api.utilities.Sleep;
+import org.dreambot.api.wrappers.interactive.GameObject;
+import org.dreambot.api.wrappers.items.Item;
+
+import java.awt.*;
+
+@ScriptManifest(name = "Miner Script", description = "A simple mining script", author ="lethalluck", version = 1.0, category = Category.MINING, image = "")
+public class REPLClass extends AbstractScript {
+
+    private final Area MINING_AREA = new Area(3283, 3365, 3288, 3370, 0);
+    private long startTime;
+    private int startExp;
+    private String currentOre = "None";
+
+    @Override
+    public void onStart() {
+        Logger.log("Script started!");
+        startTime = System.currentTimeMillis();
+        startExp = Skills.getExperience(Skill.MINING);
+    }
+
+    @Override
+    public int onLoop() {
+        if (!Inventory.isFull()) {
+            if (MINING_AREA.contains(Players.getLocal())) {
+                mineOre();
+            } else {
+                Walking.walk(MINING_AREA.getRandomTile());
+                Sleep.sleepUntil(() -> Players.getLocal().isStandingStill(), Calculations.random(5000, 12000));
+            }
+        } else {
+            Logger.log("Inventory is full.");
+        }
+        return Calculations.random(300, 600);
+    }
+
+    private void mineOre() {
+        GameObject ore = GameObjects.closest(gameObject -> gameObject != null && !gameObject.getName().equals("Rocks") && gameObject.hasAction("Mine"));
+        if (ore != null) {
+            currentOre = ore.getName();
+            if (ore.interact("Mine")) {
+                Logger.log("Mining ore...");
+                Sleep.sleepUntil(() -> !ore.exists() || Inventory.isFull(), Calculations.random(8000, 15000));
+            }
+        }
+    }
+
+    @Override
+    public void onPaint(Graphics graphics) {
+        long runTime = System.currentTimeMillis() - startTime;
+        int expGained = Skills.getExperience(Skill.MINING) - startExp;
+
+        graphics.setColor(new Color(0, 0, 0, 150));
+        graphics.fillRect(5, 5, 250, 140);
+        graphics.setColor(Color.WHITE);
+        graphics.drawRect(5, 5, 250, 140);
+
+        graphics.drawString("Running Time: " + formatTime(runTime), 10, 20);
+        graphics.drawString("EXP Gained: " + expGained, 10, 35);
+        graphics.drawString("Ore Being Mined: " + currentOre, 10, 50);
+        graphics.drawString("EXP/hr: " + (int) ((expGained) * (3600000D / runTime)), 10, 65);
+
+        Image miningIcon = new Item(11920, 1).getImage(); // Dragon pickaxe
+        if (miningIcon != null) {
+            graphics.drawImage(miningIcon, 10, 75, null);
+        }
+    }
+
+    private String formatTime(long time) {
+        long seconds = time / 1000 % 60;
+        long minutes = time / (1000 * 60) % 60;
+        long hours = time / (1000 * 60 * 60) % 24;
+
+        return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+    }
+
+    @Override
+    public void onExit() {
+        Logger.log("Script exited!");
+    }
+}
